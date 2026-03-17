@@ -1,0 +1,9 @@
+{
+  "appId": "com.bgeles.snakevibe",
+  "appName": "Snake Vibe 3D",
+  "webDir": "dist",
+  "bundledWebRuntime": false,
+  "server": {
+    "androidScheme": "https"
+  }
+}

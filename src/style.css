@@ -1,0 +1,359 @@
+:root {
+  --bg-1: #200a3f;
+  --bg-2: #0e2f4a;
+  --bg-3: #0e1528;
+  --text: #fff9f0;
+  --accent: #ff9a2a;
+  --accent-2: #6af6ff;
+  --danger: #ff5478;
+  --glass: rgba(9, 16, 38, 0.72);
+  --border: rgba(255, 255, 255, 0.24);
+}
+
+:root[data-theme="ocean-glow"] {
+  --bg-1: #062641;
+  --bg-2: #073855;
+  --bg-3: #051523;
+  --accent: #61d9ff;
+  --accent-2: #7dfbd8;
+}
+
+:root[data-theme="cyber-arena"] {
+  --bg-1: #16142a;
+  --bg-2: #241a38;
+  --bg-3: #090c17;
+  --accent: #ff67c7;
+  --accent-2: #8f7cff;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#app {
+  margin: 0;
+  width: 100svw;
+  height: 100svh;
+  min-width: 100vw;
+  min-height: 100vh;
+  height: 100dvh;
+  overflow: hidden;
+  font-family: "Avenir Next", "Trebuchet MS", "Verdana", sans-serif;
+  color: var(--text);
+  background:
+    radial-gradient(circle at 15% 18%, rgba(255, 130, 70, 0.45), transparent 35%),
+    radial-gradient(circle at 86% 12%, rgba(78, 246, 255, 0.34), transparent 40%),
+    linear-gradient(155deg, var(--bg-1), var(--bg-2) 50%, var(--bg-3));
+}
+
+#app {
+  position: fixed;
+  inset: 0;
+}
+
+#game-canvas {
+  position: fixed;
+  inset: 0;
+  width: 100svw;
+  height: 100svh;
+  min-width: 100vw;
+  min-height: 100vh;
+  height: 100dvh;
+  display: block;
+}
+
+.hud {
+  position: fixed;
+  top: 0.9rem;
+  left: 0.9rem;
+  right: 0.9rem;
+  display: flex;
+  gap: 0.6rem;
+  align-items: center;
+  z-index: 20;
+}
+
+.pill,
+.hud-btn {
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 0.48rem 0.85rem;
+  background: var(--glass);
+  backdrop-filter: blur(12px);
+  color: var(--text);
+  font-weight: 800;
+  letter-spacing: 0.02em;
+}
+
+.hud-btn {
+  cursor: pointer;
+  transition: transform 120ms ease, background 120ms ease;
+}
+
+.hud-btn:hover {
+  transform: translateY(-1px);
+  background: rgba(25, 40, 74, 0.9);
+}
+
+.hud-btn:active {
+  transform: translateY(0);
+}
+
+.overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  display: grid;
+  place-content: center;
+  padding: 1rem;
+  background: rgba(3, 8, 22, 0.68);
+  animation: fade-in 240ms ease;
+}
+
+.panel {
+  width: min(580px, 92vw);
+  border-radius: 18px;
+  border: 1px solid rgba(255, 255, 255, 0.24);
+  padding: 1.2rem;
+  background:
+    linear-gradient(140deg, rgba(255, 160, 92, 0.22), rgba(84, 245, 255, 0.16)),
+    rgba(7, 14, 35, 0.85);
+  box-shadow: 0 22px 64px rgba(0, 0, 0, 0.45);
+}
+
+.panel h1,
+.panel h2,
+.settings h3 {
+  margin: 0 0 0.45rem;
+  letter-spacing: 0.04em;
+}
+
+.panel h1 {
+  font-size: clamp(1.8rem, 4vw, 2.5rem);
+}
+
+.subtitle {
+  margin: 0 0 1rem;
+  color: rgba(255, 249, 240, 0.84);
+}
+
+.record-readout {
+  margin: 0 0 0.9rem;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+}
+
+.field {
+  display: grid;
+  gap: 0.35rem;
+  font-weight: 700;
+  margin-bottom: 1rem;
+}
+
+.field input {
+  width: 100%;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  border-radius: 12px;
+  padding: 0.65rem;
+  color: var(--text);
+  background: rgba(13, 21, 47, 0.78);
+  font-size: 1rem;
+}
+
+.menu-actions {
+  display: flex;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+}
+
+.cta,
+.secondary {
+  border: 0;
+  border-radius: 12px;
+  padding: 0.68rem 1rem;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.cta {
+  background: linear-gradient(120deg, #ffb459, #ff6e6e);
+  color: #1b102f;
+}
+
+.secondary {
+  background: rgba(106, 246, 255, 0.25);
+  color: var(--text);
+  border: 1px solid rgba(106, 246, 255, 0.45);
+}
+
+.profile-readout {
+  margin: 0.8rem 0 0;
+  color: rgba(255, 249, 240, 0.82);
+}
+
+.achievement-box {
+  margin-top: 0.95rem;
+  padding: 0.7rem;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: rgba(9, 18, 46, 0.52);
+}
+
+.achievement-box h3 {
+  margin: 0 0 0.45rem;
+}
+
+.achievement-list {
+  margin: 0;
+  padding-left: 1rem;
+  display: grid;
+  gap: 0.3rem;
+}
+
+.achievement {
+  font-size: 0.92rem;
+}
+
+.achievement.done {
+  color: #86ffb4;
+}
+
+.achievement.todo {
+  color: rgba(255, 249, 240, 0.82);
+}
+
+.compact {
+  width: min(420px, 92vw);
+  text-align: center;
+}
+
+.settings {
+  position: fixed;
+  right: 1rem;
+  top: 4.2rem;
+  width: min(320px, 90vw);
+  z-index: 35;
+  border-radius: 14px;
+  border: 1px solid rgba(106, 246, 255, 0.4);
+  padding: 0.9rem;
+  background: rgba(8, 14, 33, 0.9);
+  box-shadow: 0 18px 38px rgba(0, 0, 0, 0.35);
+}
+
+.row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.6rem;
+  font-weight: 700;
+  margin: 0.7rem 0;
+}
+
+.range-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+}
+
+.range-row input {
+  grid-column: 1 / -1;
+  width: 100%;
+}
+
+.range-row select {
+  grid-column: 1 / -1;
+  width: 100%;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.24);
+  background: rgba(13, 21, 47, 0.8);
+  color: var(--text);
+  padding: 0.45rem;
+}
+
+.slim {
+  width: 100%;
+  margin-top: 0.55rem;
+}
+
+.touch-pad {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: none;
+  pointer-events: none;
+}
+
+.turn-btn {
+  position: absolute;
+  bottom: calc(1rem + env(safe-area-inset-bottom));
+  width: 64px;
+  height: 64px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.75);
+  background: rgba(255, 255, 255, 0.28);
+  color: #ffffff;
+  font-size: 1.7rem;
+  font-weight: 900;
+  backdrop-filter: blur(8px);
+  pointer-events: auto;
+}
+
+.turn-btn.left {
+  left: calc(1rem + env(safe-area-inset-left));
+}
+
+.turn-btn.right {
+  right: calc(1rem + env(safe-area-inset-right));
+}
+
+.hidden {
+  display: none;
+}
+
+.achievement-toast {
+  position: fixed;
+  left: 50%;
+  bottom: 5.3rem;
+  transform: translateX(-50%) translateY(8px);
+  z-index: 40;
+  border: 1px solid rgba(255, 255, 255, 0.24);
+  border-radius: 999px;
+  padding: 0.56rem 0.95rem;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  color: #122636;
+  background: linear-gradient(120deg, rgba(255, 201, 94, 0.95), rgba(131, 248, 255, 0.95));
+  opacity: 0;
+  transition: opacity 180ms ease, transform 180ms ease;
+}
+
+.achievement-toast.show {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (max-width: 980px) {
+  .touch-pad {
+    display: block;
+  }
+
+  .hud {
+    flex-wrap: wrap;
+  }
+
+  .pill {
+    font-size: 0.88rem;
+  }
+}

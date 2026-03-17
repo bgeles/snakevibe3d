@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <title>Snake Vibe 3D</title>
+  </head>
+  <body>
+    <div id="app">
+      <div class="hud">
+        <div class="pill">Score: <span id="score">0</span></div>
+        <div class="pill">Level: <span id="level">1</span></div>
+        <div class="pill">High Score: <span id="high-score">0</span></div>
+        <button id="pause-btn" class="hud-btn">Pause</button>
+        <button id="settings-btn" class="hud-btn">Settings</button>
+      </div>
+
+      <div id="start-menu" class="overlay">
+        <div class="panel">
+          <h1>Snake Vibe 3D</h1>
+          <p class="subtitle">Arcade snake with neon juice and evolving challenge patterns.</p>
+          <p class="record-readout">Last Record: <strong id="menu-high-score">0</strong></p>
+          <div class="menu-actions">
+            <button id="start-btn" class="cta">Start Run</button>
+            <button id="menu-settings-btn" class="secondary">Settings</button>
+          </div>
+          <div class="achievement-box">
+            <h3>Achievements</h3>
+            <ul id="achievement-list" class="achievement-list"></ul>
+          </div>
+        </div>
+      </div>
+
+      <div id="pause-menu" class="overlay hidden">
+        <div class="panel compact">
+          <h2>Paused</h2>
+          <div class="menu-actions">
+            <button id="resume-btn" class="cta">Resume</button>
+            <button id="restart-btn" class="secondary">Restart</button>
+          </div>
+        </div>
+      </div>
+
+      <div id="gameover-menu" class="overlay hidden">
+        <div class="panel compact">
+          <h2>Game Over</h2>
+          <p>Score: <span id="final-score">0</span></p>
+          <p>High Score: <span id="final-high-score">0</span></p>
+          <div class="menu-actions">
+            <button id="play-again-btn" class="cta">Play Again</button>
+            <button id="gameover-settings-btn" class="secondary">Settings</button>
+          </div>
+        </div>
+      </div>
+
+      <aside id="settings-panel" class="settings hidden">
+        <h3>Settings</h3>
+        <label class="row">
+          <span>Sound</span>
+          <input id="sound-toggle" type="checkbox" checked />
+        </label>
+        <label class="row range-row">
+          <span>Theme</span>
+          <select id="theme-select">
+            <option value="neon-sunset">Neon Sunset</option>
+            <option value="ocean-glow">Ocean Glow</option>
+            <option value="cyber-arena">Cyber Arena</option>
+          </select>
+        </label>
+        <label class="row range-row">
+          <span>Control Sensitivity</span>
+          <input id="sensitivity" type="range" min="0.6" max="1.8" step="0.1" value="1" />
+          <strong id="sensitivity-value">1.0x</strong>
+        </label>
+        <button id="save-profile" class="cta slim">Save Profile</button>
+      </aside>
+
+      <div id="achievement-toast" class="achievement-toast hidden"></div>
+
+      <div class="touch-pad" id="touch-pad">
+        <button class="turn-btn left" data-turn="left" aria-label="Turn Left">&#x2190;</button>
+        <button class="turn-btn right" data-turn="right" aria-label="Turn Right">&#x2192;</button>
+      </div>
+
+      <canvas id="game-canvas"></canvas>
+    </div>
+
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
