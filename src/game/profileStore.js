@@ -1,10 +1,18 @@
-const STORAGE_KEY = "snake-vibe-profile-v1";
+const STORAGE_KEY = "snake-vibe-profile-v2";
 
 const DEFAULT_PROFILE = {
   highScore: 0,
   soundEnabled: true,
   sensitivity: 1,
   theme: "neon-sunset",
+  language: "pt-BR",
+  cameraMode: "cinematic",
+  coins: 0,
+  rewards: {
+    lastDailyClaimAt: "",
+    rewardedAdsWatched: 0,
+    totalLevelRewards: 0
+  },
   achievements: {
     score20: false,
     level5: false,
@@ -24,7 +32,14 @@ export function loadProfile() {
         ...DEFAULT_PROFILE.achievements,
         ...(parsed.achievements || {})
       },
+      rewards: {
+        ...DEFAULT_PROFILE.rewards,
+        ...(parsed.rewards || {})
+      },
       theme: sanitizeTheme(parsed.theme),
+      language: sanitizeLanguage(parsed.language),
+      cameraMode: sanitizeCameraMode(parsed.cameraMode),
+      coins: Math.max(0, Number(parsed.coins) || 0),
       sensitivity: clamp(Number(parsed.sensitivity) || 1, 0.6, 1.8),
       highScore: Math.max(0, Number(parsed.highScore) || 0)
     };
@@ -41,6 +56,13 @@ export function saveProfile(profile) {
     soundEnabled: Boolean(profile.soundEnabled),
     sensitivity: clamp(Number(profile.sensitivity) || 1, 0.6, 1.8),
     theme: sanitizeTheme(profile.theme),
+    language: sanitizeLanguage(profile.language),
+    cameraMode: sanitizeCameraMode(profile.cameraMode),
+    coins: Math.max(0, Number(profile.coins) || 0),
+    rewards: {
+      ...DEFAULT_PROFILE.rewards,
+      ...(profile.rewards || {})
+    },
     achievements: {
       ...DEFAULT_PROFILE.achievements,
       ...(profile.achievements || {})
@@ -64,4 +86,18 @@ function sanitizeTheme(theme) {
     return theme;
   }
   return "neon-sunset";
+}
+
+function sanitizeLanguage(language) {
+  if (language === "pt-BR" || language === "en-US" || language === "es-ES") {
+    return language;
+  }
+  return "pt-BR";
+}
+
+function sanitizeCameraMode(cameraMode) {
+  if (cameraMode === "arcade" || cameraMode === "cinematic") {
+    return cameraMode;
+  }
+  return "cinematic";
 }
