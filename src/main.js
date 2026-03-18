@@ -1,16 +1,24 @@
 import "./style.css";
 import { SnakeGame } from "./game/SnakeGame.js";
 import { loadProfile, saveProfile } from "./game/profileStore.js";
+import { detectLanguage, t } from "./game/i18n.js";
+import { MobileAdsService } from "./mobile/adService.js";
+
+const COIN_REWARD_PER_LEVEL = 5;
+const COIN_REWARD_DAILY = 20;
+const COIN_REWARD_AD = 30;
 
 const ACHIEVEMENTS = [
-  { id: "score20", name: "Hungry Rookie", rule: (ctx) => ctx.score >= 20 },
-  { id: "level5", name: "Pattern Master", rule: (ctx) => ctx.level >= 5 },
-  { id: "streak30", name: "No-Collision Streak", rule: (ctx) => ctx.score >= 30 }
+  { id: "score20", key: "achievementScore20", fallback: "Hungry Rookie", rule: (ctx) => ctx.score >= 20, reward: 10 },
+  { id: "level5", key: "achievementLevel5", fallback: "Pattern Master", rule: (ctx) => ctx.level >= 5, reward: 12 },
+  { id: "streak30", key: "achievementStreak30", fallback: "No-Collision Streak", rule: (ctx) => ctx.score >= 30, reward: 15 }
 ];
 
 const canvas = document.getElementById("game-canvas");
 const scoreEl = document.getElementById("score");
 const levelEl = document.getElementById("level");
+const coinsEl = document.getElementById("coins");
+const menuCoinsEl = document.getElementById("menu-coins");
 const highScoreEl = document.getElementById("high-score");
 const menuHighScoreEl = document.getElementById("menu-high-score");
 const achievementListEl = document.getElementById("achievement-list");
@@ -32,25 +40,69 @@ const resumeBtn = document.getElementById("resume-btn");
 const restartBtn = document.getElementById("restart-btn");
 const playAgainBtn = document.getElementById("play-again-btn");
 const saveProfileBtn = document.getElementById("save-profile");
+const closeSettingsBtn = document.getElementById("close-settings-btn");
+const dailyRewardBtn = document.getElementById("daily-reward-btn");
+const rewardAdBtn = document.getElementById("reward-ad-btn");
 
 const soundToggle = document.getElementById("sound-toggle");
 const themeSelect = document.getElementById("theme-select");
+const cameraSelect = document.getElementById("camera-select");
+const languageSelect = document.getElementById("language-select");
 const sensitivityInput = document.getElementById("sensitivity");
 const sensitivityValue = document.getElementById("sensitivity-value");
 const touchPad = document.getElementById("touch-pad");
 
+const ads = new MobileAdsService();
+
 let profile = loadProfile();
+if (!profile.language) {
+  profile = saveProfile({ ...profile, language: detectLanguage() });
+}
 let toastTimer = null;
+let lastAwardedLevel = 1;
+
+function applyTranslations() {
+  document.documentElement.lang = profile.language;
+  document.querySelectorAll("[data-i18n]").forEach((node) => {
+    const key = node.getAttribute("data-i18n");
+    if (!key) return;
+    node.textContent = t(profile.language, key);
+  });
+
+  const titleEl = document.querySelector("title");
+  if (titleEl) titleEl.textContent = t(profile.language, "title");
+
+  const themeOptionMap = {
+    "neon-sunset": "Neon Sunset",
+    "ocean-glow": "Ocean Glow",
+    "cyber-arena": "Cyber Arena"
+  };
+  [...themeSelect.options].forEach((option) => {
+    option.textContent = themeOptionMap[option.value] || option.textContent;
+  });
+
+  renderAchievements();
+}
 
 function applyProfileToUi() {
   highScoreEl.textContent = `${profile.highScore}`;
   finalHighScoreEl.textContent = `${profile.highScore}`;
   menuHighScoreEl.textContent = `${profile.highScore}`;
+  coinsEl.textContent = `${profile.coins}`;
+  menuCoinsEl.textContent = `${profile.coins}`;
   soundToggle.checked = profile.soundEnabled;
   themeSelect.value = profile.theme;
+  cameraSelect.value = profile.cameraMode;
+  languageSelect.value = profile.language;
   sensitivityInput.value = `${profile.sensitivity}`;
   sensitivityValue.textContent = `${profile.sensitivity.toFixed(1)}x`;
   document.documentElement.setAttribute("data-theme", profile.theme);
+  applyTranslations();
+}
+
+function achievementLabel(achievement) {
+  const value = t(profile.language, achievement.key);
+  return value === achievement.key ? achievement.fallback : value;
 }
 
 function renderAchievements() {
@@ -59,7 +111,7 @@ function renderAchievements() {
     const unlocked = Boolean(profile.achievements[achievement.id]);
     const li = document.createElement("li");
     li.className = `achievement ${unlocked ? "done" : "todo"}`;
-    li.textContent = `${unlocked ? "Unlocked" : "Locked"} - ${achievement.name}`;
+    li.textContent = `${t(profile.language, unlocked ? "unlocked" : "locked")} - ${achievementLabel(achievement)}`;
     achievementListEl.appendChild(li);
   });
 }
@@ -70,15 +122,74 @@ function persistProfile(patch = {}) {
   renderAchievements();
 }
 
-function showAchievementToast(name) {
-  achievementToastEl.textContent = `Achievement Unlocked: ${name}`;
+function showToast(message) {
+  achievementToastEl.textContent = message;
   achievementToastEl.classList.remove("hidden");
   achievementToastEl.classList.add("show");
   if (toastTimer) clearTimeout(toastTimer);
   toastTimer = setTimeout(() => {
     achievementToastEl.classList.remove("show");
     achievementToastEl.classList.add("hidden");
-  }, 1700);
+  }, 1900);
+}
+
+function showAchievementToast(name) {
+  showToast(`${t(profile.language, "achievementUnlocked")}: ${name}`);
+}
+
+function addCoins(amount, messageKey, vars = {}) {
+  const coins = Math.max(0, Number(profile.coins) + Number(amount));
+  persistProfile({ coins });
+  if (messageKey) {
+    showToast(t(profile.language, messageKey, vars));
+  }
+}
+
+function canClaimDailyReward() {
+  const today = new Date().toISOString().slice(0, 10);
+  return profile.rewards.lastDailyClaimAt !== today;
+}
+
+function claimDailyReward() {
+  if (!canClaimDailyReward()) {
+    showToast(t(profile.language, "dailyClaimed"));
+    return;
+  }
+
+  const today = new Date().toISOString().slice(0, 10);
+  addCoins(COIN_REWARD_DAILY, "dailySuccess");
+  persistProfile({
+    rewards: {
+      ...profile.rewards,
+      lastDailyClaimAt: today
+    }
+  });
+}
+
+async function claimAdReward() {
+  if (!ads.isAvailable) {
+    showToast(t(profile.language, "adMissingPlugin"));
+    return;
+  }
+
+  const result = await ads.showRewarded();
+  if (result.ok && result.rewarded) {
+    addCoins(COIN_REWARD_AD, "rewardFromAd");
+    persistProfile({
+      rewards: {
+        ...profile.rewards,
+        rewardedAdsWatched: (profile.rewards.rewardedAdsWatched || 0) + 1
+      }
+    });
+    return;
+  }
+
+  if (result.reason === "not-ready") {
+    showToast(t(profile.language, "adNotReady"));
+    return;
+  }
+
+  showToast(t(profile.language, "adNotReady"));
 }
 
 const game = new SnakeGame({
@@ -92,7 +203,8 @@ const game = new SnakeGame({
   settings: {
     soundEnabled: profile.soundEnabled,
     sensitivity: profile.sensitivity,
-    theme: profile.theme
+    theme: profile.theme,
+    cameraMode: profile.cameraMode
   },
   onProgress: ({ score, level }) => {
     const nextAchievements = { ...profile.achievements };
@@ -102,9 +214,23 @@ const game = new SnakeGame({
       if (!nextAchievements[achievement.id] && achievement.rule({ score, level })) {
         nextAchievements[achievement.id] = true;
         changed = true;
-        showAchievementToast(achievement.name);
+        showAchievementToast(achievementLabel(achievement));
+        addCoins(achievement.reward, null);
       }
     });
+
+    if (level > lastAwardedLevel) {
+      const levelsGained = level - lastAwardedLevel;
+      const reward = levelsGained * COIN_REWARD_PER_LEVEL;
+      addCoins(reward, "rewardFromLevel", { value: reward });
+      persistProfile({
+        rewards: {
+          ...profile.rewards,
+          totalLevelRewards: (profile.rewards.totalLevelRewards || 0) + reward
+        }
+      });
+      lastAwardedLevel = level;
+    }
 
     if (changed) {
       persistProfile({ achievements: nextAchievements });
@@ -138,31 +264,37 @@ function toggleSettings() {
   settingsPanelEl.classList.toggle("hidden");
 }
 
-startBtn.addEventListener("click", () => {
+function closeSettings() {
+  settingsPanelEl.classList.add("hidden");
+}
+
+function startRunFromUi() {
   persistProfile({
     soundEnabled: soundToggle.checked,
     sensitivity: Number(sensitivityInput.value),
-    theme: themeSelect.value
+    theme: themeSelect.value,
+    language: languageSelect.value,
+    cameraMode: cameraSelect.value
   });
+
+  lastAwardedLevel = 1;
   game.setPlayerProfile(profile);
   game.startRun();
   hideOverlays();
-});
+}
+
+startBtn.addEventListener("click", startRunFromUi);
 
 resumeBtn.addEventListener("click", () => {
   game.resume();
   hideOverlays();
 });
 
-restartBtn.addEventListener("click", () => {
-  game.startRun();
-  hideOverlays();
-});
+restartBtn.addEventListener("click", startRunFromUi);
+playAgainBtn.addEventListener("click", startRunFromUi);
 
-playAgainBtn.addEventListener("click", () => {
-  game.startRun();
-  hideOverlays();
-});
+dailyRewardBtn.addEventListener("click", claimDailyReward);
+rewardAdBtn.addEventListener("click", claimAdReward);
 
 pauseBtn.addEventListener("click", () => {
   if (game.togglePause()) {
@@ -180,10 +312,15 @@ saveProfileBtn.addEventListener("click", () => {
   persistProfile({
     soundEnabled: soundToggle.checked,
     sensitivity: Number(sensitivityInput.value),
-    theme: themeSelect.value
+    theme: themeSelect.value,
+    language: languageSelect.value,
+    cameraMode: cameraSelect.value
   });
   game.setPlayerProfile(profile);
+  closeSettings();
 });
+
+closeSettingsBtn.addEventListener("click", closeSettings);
 
 sensitivityInput.addEventListener("input", () => {
   sensitivityValue.textContent = `${Number(sensitivityInput.value).toFixed(1)}x`;
@@ -200,6 +337,14 @@ themeSelect.addEventListener("change", () => {
   game.updateSettings({ theme });
 });
 
+cameraSelect.addEventListener("change", () => {
+  game.updateSettings({ cameraMode: cameraSelect.value });
+});
+
+languageSelect.addEventListener("change", () => {
+  persistProfile({ language: languageSelect.value });
+});
+
 window.addEventListener("keydown", (e) => {
   if (e.key === "Escape") {
     const state = game.getState();
@@ -212,8 +357,15 @@ window.addEventListener("keydown", (e) => {
   }
 });
 
+async function initAds() {
+  const result = await ads.init();
+  if (!result.ok) return;
+  await ads.showBanner();
+}
+
 applyProfileToUi();
 renderAchievements();
 showOverlay(startMenuEl);
 game.setPlayerProfile(profile);
 game.boot();
+initAds();

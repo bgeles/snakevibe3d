@@ -1,7 +1,7 @@
 export const GRID_SIZE = 26;
-export const START_SPEED_MS = 130;
+export const START_SPEED_MS = 165;
 export const LEVEL_UP_EVERY = 5;
-export const MIN_SPEED_MS = 60;
+export const MIN_SPEED_MS = 48;
 
 export const SETTINGS_LIMITS = {
   MIN_SENSITIVITY: 0.6,

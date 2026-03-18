@@ -6,7 +6,7 @@ import { DEFAULT_THEME, THEMES } from "./themes.js";
 const CELL = 1;
 const MIN = -Math.floor(GRID_SIZE / 2);
 const MAX = MIN + GRID_SIZE - 1;
-const CAMERA_VIEW_SIZE = GRID_SIZE + 6;
+const CAMERA_FOV = 52;
 
 export class SnakeGame {
   constructor({
@@ -34,7 +34,8 @@ export class SnakeGame {
     this.settings = {
       soundEnabled: Boolean(settings.soundEnabled),
       sensitivity: this.clamp(Number(settings.sensitivity) || 1, SETTINGS_LIMITS.MIN_SENSITIVITY, SETTINGS_LIMITS.MAX_SENSITIVITY),
-      theme: THEMES[settings.theme] ? settings.theme : DEFAULT_THEME
+      theme: THEMES[settings.theme] ? settings.theme : DEFAULT_THEME,
+      cameraMode: settings.cameraMode === "arcade" ? "arcade" : "cinematic"
     };
 
     this.playerProfile = {
@@ -45,11 +46,12 @@ export class SnakeGame {
     this.scene = new THREE.Scene();
     this.scene.fog = new THREE.Fog(0x100421, 16, 52);
 
-    // Orthographic top-down camera keeps stable framing on mobile aspect ratios.
-    this.camera = new THREE.OrthographicCamera(-10, 10, 10, -10, 0.1, 160);
-    this.camera.position.set(0, 40, 0.01);
-    this.camera.up.set(0, 0, -1);
+    this.camera = new THREE.PerspectiveCamera(CAMERA_FOV, 1, 0.1, 220);
+    this.camera.position.set(0, 22, 20);
+    this.camera.up.set(0, 1, 0);
     this.camera.lookAt(0, 0, 0);
+    this.cameraTarget = new THREE.Vector3(0, 0, 0);
+    this.lastOrbitAngle = 0;
 
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: false });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
@@ -76,6 +78,8 @@ export class SnakeGame {
     this.level = 1;
     this.speedMs = START_SPEED_MS;
     this.loopStarted = false;
+    this.cameraShake = 0;
+    this.musicNodes = null;
 
     this.setupWorld();
     this.setupEvents();
@@ -107,6 +111,8 @@ export class SnakeGame {
   updateSettings(patch) {
     if (typeof patch.soundEnabled === "boolean") {
       this.settings.soundEnabled = patch.soundEnabled;
+      if (!patch.soundEnabled) this.stopMusic();
+      else if (this.state === "playing" && !this.musicNodes) this.startMusic();
     }
     if (typeof patch.sensitivity === "number") {
       this.settings.sensitivity = this.clamp(
@@ -120,6 +126,9 @@ export class SnakeGame {
       this.applyTheme();
       this.recolorSnake();
       this.recolorObstacles();
+    }
+    if (typeof patch.cameraMode === "string") {
+      this.settings.cameraMode = patch.cameraMode === "arcade" ? "arcade" : "cinematic";
     }
   }
 
@@ -156,6 +165,8 @@ export class SnakeGame {
     this.spawnFood();
     this.renderSnake(true);
     this.updateHud();
+    this.stopMusic();
+    this.startMusic();
   }
 
   resume() {
@@ -198,9 +209,9 @@ export class SnakeGame {
 
     const floorGeo = new THREE.PlaneGeometry(GRID_SIZE * CELL, GRID_SIZE * CELL, GRID_SIZE, GRID_SIZE);
     this.floorMat = new THREE.MeshStandardMaterial({
-      emissiveIntensity: 0.36,
-      metalness: 0.08,
-      roughness: 0.72
+      emissiveIntensity: 0.55,
+      metalness: 0.22,
+      roughness: 0.55
     });
     this.floor = new THREE.Mesh(floorGeo, this.floorMat);
     this.floor.rotation.x = -Math.PI / 2;
@@ -221,7 +232,7 @@ export class SnakeGame {
     this.currentTheme = theme;
 
     this.scene.background = new THREE.Color(theme.sceneBg);
-    this.scene.fog = new THREE.Fog(theme.fog, 14, 58);
+    this.scene.fog = new THREE.Fog(theme.sceneBg, 20, 80);
 
     this.ambient.color.setHex(theme.ambient);
     this.keyLight.color.setHex(theme.key);
@@ -251,6 +262,7 @@ export class SnakeGame {
     }
 
     this.recolorAmbientParticles();
+    this.updateCamera(0);
   }
 
   recolorAmbientParticles() {
@@ -383,11 +395,12 @@ export class SnakeGame {
       this.obstacles.push(pos);
       const useA = (i + level) % 2 === 0;
       const tone = useA ? this.currentTheme.obstacleA : this.currentTheme.obstacleB;
+      const bh = level >= 8 ? 1.8 : level >= 5 ? 1.4 : 1.0;
       const mesh = new THREE.Mesh(
-        new THREE.BoxGeometry(1, 1, 1),
-        new THREE.MeshStandardMaterial({ color: tone, emissive: tone, emissiveIntensity: 0.46, roughness: 0.45, metalness: 0.14 })
+        new THREE.BoxGeometry(0.92, bh, 0.92),
+        new THREE.MeshStandardMaterial({ color: tone, emissive: tone, emissiveIntensity: 0.65, roughness: 0.28, metalness: 0.28 })
       );
-      mesh.position.set(pos.x * CELL, 0.52, pos.z * CELL);
+      mesh.position.set(pos.x * CELL, bh * 0.5, pos.z * CELL);
       this.obstacleMeshes.push(mesh);
       this.scene.add(mesh);
     });
@@ -471,27 +484,86 @@ export class SnakeGame {
     });
   }
 
+  createLevelUpVfx(origin) {
+    const cols = [this.currentTheme.halo, this.currentTheme.rim, this.currentTheme.food];
+    for (let i = 0; i < 80; i += 1) {
+      const color = cols[i % cols.length];
+      const mesh = new THREE.Mesh(
+        new THREE.SphereGeometry(0.07 + Math.random() * 0.12, 6, 6),
+        new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 1 })
+      );
+      mesh.position.copy(origin);
+      this.scene.add(mesh);
+      const angle = (i / 80) * Math.PI * 2;
+      const r = 0.3 + Math.random() * 0.9;
+      const velocity = new THREE.Vector3(
+        Math.cos(angle) * r,
+        Math.random() * 1.1 + 0.3,
+        Math.sin(angle) * r
+      );
+      this.particles.push({ mesh, velocity, life: 1.1 + Math.random() * 0.7, drag: 0.94 });
+    }
+  }
+
+  createDeathExplosion(origin) {
+    const cols = [this.currentTheme.food, this.currentTheme.halo, this.currentTheme.follow, 0xff2200];
+    for (let i = 0; i < 110; i += 1) {
+      const color = cols[i % cols.length];
+      const size = 0.05 + Math.random() * 0.2;
+      const mesh = new THREE.Mesh(
+        new THREE.SphereGeometry(size, 6, 6),
+        new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 1 })
+      );
+      mesh.position.copy(origin);
+      this.scene.add(mesh);
+      const angle = Math.random() * Math.PI * 2;
+      const elev = Math.random() * Math.PI * 0.55;
+      const speed = 0.2 + Math.random() * 1.1;
+      const velocity = new THREE.Vector3(
+        Math.cos(angle) * Math.cos(elev) * speed,
+        Math.sin(elev) * speed + 0.2,
+        Math.sin(angle) * Math.cos(elev) * speed
+      );
+      this.particles.push({ mesh, velocity, life: 0.9 + Math.random() * 1.2, drag: 0.9 });
+    }
+  }
+
   pickSnakeColor() {
     const palette = this.currentTheme.snakeNeons;
     return palette[Math.floor(Math.random() * palette.length)] || 0x7dff87;
   }
 
   createEatParticles(origin) {
-    const count = 34;
-    for (let i = 0; i < count; i += 1) {
-      const color = i % 2 === 0 ? this.currentTheme.halo : this.currentTheme.follow;
+    const cols = [this.currentTheme.halo, this.currentTheme.follow, this.currentTheme.food];
+    for (let i = 0; i < 56; i += 1) {
+      const color = cols[i % cols.length];
+      const size = 0.06 + Math.random() * 0.12;
       const mesh = new THREE.Mesh(
-        new THREE.SphereGeometry(0.09, 8, 8),
-        new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.95 })
+        new THREE.SphereGeometry(size, 6, 6),
+        new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 1 })
       );
       mesh.position.copy(origin);
       this.scene.add(mesh);
+      const angle = (i / 56) * Math.PI * 2;
+      const speed = 0.15 + Math.random() * 0.55;
       const velocity = new THREE.Vector3(
-        (Math.random() - 0.5) * 0.36,
-        Math.random() * 0.38,
-        (Math.random() - 0.5) * 0.36
+        Math.cos(angle) * speed,
+        Math.random() * 0.65 + 0.1,
+        Math.sin(angle) * speed
       );
-      this.particles.push({ mesh, velocity, life: 0.7 + Math.random() * 0.5, drag: 0.96 });
+      this.particles.push({ mesh, velocity, life: 0.55 + Math.random() * 0.7, drag: 0.92 });
+    }
+    for (let i = 0; i < 20; i += 1) {
+      const color = i % 2 === 0 ? this.currentTheme.halo : this.currentTheme.food;
+      const mesh = new THREE.Mesh(
+        new THREE.SphereGeometry(0.055, 5, 5),
+        new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.85 })
+      );
+      mesh.position.copy(origin);
+      this.scene.add(mesh);
+      const angle = (i / 20) * Math.PI * 2;
+      const velocity = new THREE.Vector3(Math.cos(angle) * 0.65, 0.05, Math.sin(angle) * 0.65);
+      this.particles.push({ mesh, velocity, life: 0.45 + Math.random() * 0.25, drag: 0.87 });
     }
   }
 
@@ -536,32 +608,103 @@ export class SnakeGame {
     }
   }
 
-  playTone(frequency, ms) {
+  playTone(frequency, ms, type = "triangle", vol = 0.07) {
     if (!this.settings.soundEnabled) return;
     const Ctx = window.AudioContext || window.webkitAudioContext;
     if (!Ctx) return;
-
-    const audioCtx = this.audioCtx || new Ctx();
-    this.audioCtx = audioCtx;
-
-    if (audioCtx.state === "suspended") {
-      audioCtx.resume();
-    }
-
-    const osc = audioCtx.createOscillator();
-    const gain = audioCtx.createGain();
+    if (!this.audioCtx) this.audioCtx = new Ctx();
+    const ctx = this.audioCtx;
+    if (ctx.state === "suspended") ctx.resume();
+    const now = ctx.currentTime;
+    const dur = ms / 1000;
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = type;
     osc.frequency.value = frequency;
-    osc.type = "triangle";
-    gain.gain.value = 0.07;
+    gain.gain.setValueAtTime(0, now);
+    gain.gain.linearRampToValueAtTime(vol, now + Math.min(0.02, dur * 0.15));
+    gain.gain.exponentialRampToValueAtTime(0.001, now + dur);
     osc.connect(gain);
-    gain.connect(audioCtx.destination);
-    osc.start();
-    osc.stop(audioCtx.currentTime + ms / 1000);
+    gain.connect(ctx.destination);
+    osc.start(now);
+    osc.stop(now + dur + 0.05);
+  }
+
+  playEatSound() {
+    const base = 460 + this.level * 18;
+    this.playTone(base, 70, "triangle", 0.08);
+    setTimeout(() => this.playTone(base * 1.25, 70, "triangle", 0.07), 65);
+    setTimeout(() => this.playTone(base * 1.5, 90, "sine", 0.06), 130);
+  }
+
+  playLevelUpSound() {
+    [1, 1.26, 1.5, 2].forEach((r, i) => {
+      setTimeout(() => this.playTone(440 * r, 160, "triangle", 0.1), i * 95);
+    });
+  }
+
+  playDeathSound() {
+    [280, 200, 140, 90].forEach((freq, i) => {
+      setTimeout(() => this.playTone(freq, 170, "sawtooth", 0.09), i * 105);
+    });
+  }
+
+  startMusic() {
+    if (!this.settings.soundEnabled) return;
+    const Ctx = window.AudioContext || window.webkitAudioContext;
+    if (!Ctx || this.musicNodes) return;
+    if (!this.audioCtx) this.audioCtx = new Ctx();
+    const ctx = this.audioCtx;
+    if (ctx.state === "suspended") ctx.resume();
+    const master = ctx.createGain();
+    master.gain.setValueAtTime(0, ctx.currentTime);
+    master.gain.linearRampToValueAtTime(0.04, ctx.currentTime + 2.5);
+    master.connect(ctx.destination);
+    const freqs = [55, 82.5, 110, 165];
+    const oscs = freqs.map((freq, i) => {
+      const osc = ctx.createOscillator();
+      const g = ctx.createGain();
+      osc.type = i % 2 === 0 ? "sine" : "triangle";
+      osc.frequency.value = freq;
+      osc.detune.value = i * 6 - 8;
+      g.gain.value = 1 / freqs.length;
+      osc.connect(g);
+      g.connect(master);
+      osc.start();
+      return osc;
+    });
+    const lfo = ctx.createOscillator();
+    const lfoGain = ctx.createGain();
+    lfo.frequency.value = 0.14;
+    lfoGain.gain.value = 0.015;
+    lfo.connect(lfoGain);
+    lfoGain.connect(master.gain);
+    lfo.start();
+    this.musicNodes = { master, oscs, lfo };
+  }
+
+  stopMusic() {
+    if (!this.musicNodes) return;
+    const { master, oscs, lfo } = this.musicNodes;
+    const t = this.audioCtx ? this.audioCtx.currentTime + 0.5 : 0;
+    try { master.gain.linearRampToValueAtTime(0, t); } catch {}
+    setTimeout(() => {
+      oscs.forEach(o => { try { o.stop(); } catch {} });
+      try { lfo.stop(); } catch {}
+      try { master.disconnect(); } catch {}
+    }, 600);
+    this.musicNodes = null;
   }
 
   gameOver() {
     this.state = "gameover";
-    this.playTone(150, 300);
+    this.stopMusic();
+    this.playDeathSound();
+    this.cameraShake = 0.85;
+    if (this.snake.length) {
+      const h = this.snake[0];
+      this.createDeathExplosion(new THREE.Vector3(h.x * CELL, 0.5, h.z * CELL));
+    }
 
     const highScore = Math.max(this.playerProfile.highScore, this.score);
     this.playerProfile.highScore = highScore;
@@ -603,15 +746,19 @@ export class SnakeGame {
     const ateFood = next.x === this.food.x && next.z === this.food.z;
     if (ateFood) {
       this.score += 1;
-      this.playTone(560 + this.level * 12, 85);
+      this.playEatSound();
+      this.cameraShake = 0.1;
       this.createEatParticles(new THREE.Vector3(next.x * CELL, 0.5, next.z * CELL));
       this.spawnFood();
 
       const expectedLevel = Math.floor(this.score / LEVEL_UP_EVERY) + 1;
       if (expectedLevel > this.level) {
         this.level = expectedLevel;
-        this.speedMs = Math.max(MIN_SPEED_MS, START_SPEED_MS - (this.level - 1) * 7);
+        this.speedMs = Math.max(MIN_SPEED_MS, START_SPEED_MS - (this.level - 1) * 11);
         this.setObstaclesForLevel(this.level);
+        this.playLevelUpSound();
+        this.createLevelUpVfx(new THREE.Vector3(next.x * CELL, 0.5, next.z * CELL));
+        this.cameraShake = 0.22;
       }
     } else {
       this.snake.pop();
@@ -643,9 +790,9 @@ export class SnakeGame {
   }
 
   updateAmbientVfx(delta, nowMs) {
-    const wave = Math.sin(nowMs * 0.0016) * 0.22;
-    this.keyLight.intensity = 1.35 + wave * 0.3;
-    this.rimLight.intensity = 0.9 - wave * 0.25;
+    const wave = Math.sin(nowMs * 0.0016) * 0.28;
+    this.keyLight.intensity = 1.7 + wave * 0.55;
+    this.rimLight.intensity = 1.25 - wave * 0.4;
 
     this.ambientParticles.forEach((p, idx) => {
       p.mesh.position.addScaledVector(p.drift, delta * 20);
@@ -672,8 +819,74 @@ export class SnakeGame {
     }
 
     if (this.gridHelper?.material) {
-      this.gridHelper.material.opacity = 0.2 + Math.abs(Math.sin(nowMs * 0.0012)) * 0.12;
+      this.gridHelper.material.opacity = 0.18 + Math.abs(Math.sin(nowMs * 0.0012)) * 0.18;
     }
+
+    if (this.obstacleMeshes.length) {
+      const pulse = 0.5 + Math.sin(nowMs * 0.003) * 0.35;
+      this.obstacleMeshes.forEach((mesh, i) => {
+        if (mesh.material) {
+          mesh.material.emissiveIntensity = pulse + Math.sin(nowMs * 0.005 + i * 0.9) * 0.18;
+        }
+      });
+    }
+
+    this.updateCamera(delta, nowMs);
+  }
+
+  updateCamera(delta = 0, _nowMs = performance.now()) {
+    const hasSnake = this.snake.length > 0;
+    const head = hasSnake ? this.snake[0] : { x: 0, z: 0 };
+    const headWorld = new THREE.Vector3(head.x * CELL, 0, head.z * CELL);
+
+    const sx = this.cameraShake > 0.002 ? (Math.random() - 0.5) * this.cameraShake * 1.5 : 0;
+    const sy = this.cameraShake > 0.002 ? (Math.random() - 0.5) * this.cameraShake * 0.6 : 0;
+    this.cameraShake = Math.max(0, this.cameraShake - (delta > 0 ? delta * 4.5 : 0));
+
+    if (this.settings.cameraMode === "arcade") {
+      // Smooth target follow
+      this.cameraTarget.lerp(headWorld, Math.min(1, delta * 7.5 + 0.12));
+      
+      // Orbital rotation based on snake direction
+      const dir = this.direction || DIR.RIGHT;
+      let orbitAngle = Math.atan2(dir.z, dir.x);
+      
+      // Smooth angle interpolation (avoid abrupt jumps)
+      if (this.lastOrbitAngle !== undefined) {
+        let diff = orbitAngle - this.lastOrbitAngle;
+        if (diff > Math.PI) diff -= Math.PI * 2;
+        if (diff < -Math.PI) diff += Math.PI * 2;
+        orbitAngle = this.lastOrbitAngle + diff * Math.min(1, delta * 8);
+      }
+      this.lastOrbitAngle = orbitAngle;
+      
+      // Position orbit camera around target
+      const orbitDist = 22;
+      const orbitHeight = 28;
+      const desired = new THREE.Vector3(
+        this.cameraTarget.x + Math.cos(orbitAngle) * orbitDist + sx,
+        orbitHeight + sy,
+        this.cameraTarget.z + Math.sin(orbitAngle) * orbitDist + sy
+      );
+      
+      // Smooth camera lerp
+      this.camera.position.lerp(desired, Math.min(1, delta * 6.5 + 0.1));
+      this.camera.lookAt(this.cameraTarget);
+      return;
+    }
+
+    // Isometric follow — fixed diagonal offset, smooth lerp onto snake head
+    const ISO_H = 17;
+    const ISO_D = 14;
+    const lerpT = Math.min(1, delta * 4 + 0.055);
+    this.cameraTarget.lerp(headWorld, lerpT);
+    const desired = new THREE.Vector3(
+      this.cameraTarget.x + ISO_D + sx,
+      ISO_H + sy,
+      this.cameraTarget.z + ISO_D
+    );
+    this.camera.position.lerp(desired, lerpT);
+    this.camera.lookAt(this.cameraTarget);
   }
 
   updateHud() {
@@ -688,24 +901,13 @@ export class SnakeGame {
     const height = Math.max(Math.floor(viewport ? viewport.height : window.innerHeight), 1);
     const aspect = width / height;
 
-    let halfW = CAMERA_VIEW_SIZE / 2;
-    let halfH = CAMERA_VIEW_SIZE / 2;
-
-    if (aspect >= 1) {
-      halfW *= aspect;
-    } else {
-      halfH /= aspect;
-    }
-
-    this.camera.left = -halfW;
-    this.camera.right = halfW;
-    this.camera.top = halfH;
-    this.camera.bottom = -halfH;
+    this.camera.aspect = aspect;
     this.camera.updateProjectionMatrix();
 
     this.canvas.style.width = `${width}px`;
     this.canvas.style.height = `${height}px`;
     this.renderer.setSize(width, height, false);
+    this.updateCamera(0);
   }
 
   createFloorTexture(theme) {
@@ -728,6 +930,9 @@ export class SnakeGame {
       }
     }
 
+    ctx.lineWidth = 2;
+    ctx.shadowBlur = 10;
+    ctx.shadowColor = theme.floorLine;
     ctx.strokeStyle = theme.floorLine;
     for (let i = 0; i <= 8; i += 1) {
       const p = i * tile;
