@@ -41,7 +41,14 @@ const LANGUAGES = {
     locked: "Bloqueada",
     cameraArcade: "Arcade",
     cameraCinematic: "Cinematica",
-    rewardVideoTitle: "Video recompensado"
+    rewardVideoTitle: "Video recompensado",
+    powerUpShop: "Power Ups",
+    extraLife: "Vida Extra",
+    buy: "Comprar",
+    notEnoughCoins: "Moedas insuficientes!",
+    lifeUsed: "Vida extra usada!",
+    maxLives: "Maximo de vidas extras atingido.",
+    livesHud: "Vidas"
   },
   "en-US": {
     title: "Snake Vibe 3D",
@@ -85,7 +92,14 @@ const LANGUAGES = {
     locked: "Locked",
     cameraArcade: "Arcade",
     cameraCinematic: "Cinematic",
-    rewardVideoTitle: "Rewarded video"
+    rewardVideoTitle: "Rewarded video",
+    powerUpShop: "Power Ups",
+    extraLife: "Extra Life",
+    buy: "Buy",
+    notEnoughCoins: "Not enough coins!",
+    lifeUsed: "Extra life used!",
+    maxLives: "Max extra lives reached.",
+    livesHud: "Lives"
   },
   "es-ES": {
     title: "Snake Vibe 3D",
@@ -129,7 +143,14 @@ const LANGUAGES = {
     locked: "Bloqueado",
     cameraArcade: "Arcade",
     cameraCinematic: "Cinematica",
-    rewardVideoTitle: "Video recompensado"
+    rewardVideoTitle: "Video recompensado",
+    powerUpShop: "Power Ups",
+    extraLife: "Vida Extra",
+    buy: "Comprar",
+    notEnoughCoins: "Monedas insuficientes!",
+    lifeUsed: "Vida extra usada!",
+    maxLives: "Maximo de vidas extras alcanzado.",
+    livesHud: "Vidas"
   }
 };
 

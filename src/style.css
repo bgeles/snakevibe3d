@@ -284,6 +284,47 @@ body,
   margin: 0 0 0.5rem;
 }
 
+.powerup-shop {
+  margin-top: 0.9rem;
+  padding: 0.75rem;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 200, 60, 0.35);
+  background: rgba(30, 18, 6, 0.55);
+}
+
+.powerup-shop h3 {
+  margin: 0 0 0.5rem;
+}
+
+.powerup-item {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+}
+
+.powerup-label {
+  font-weight: 700;
+}
+
+.lives-display {
+  font-weight: 800;
+  font-size: 1.1rem;
+  color: #ff5478;
+  min-width: 2rem;
+}
+
+.powerup-buy-btn {
+  margin-left: auto;
+  font-size: 0.82rem;
+  padding: 0.45rem 0.9rem;
+}
+
+.lives-pill {
+  color: #ff5478;
+  font-weight: 800;
+}
+
 .profile-readout {
   margin: 0.8rem 0 0;
   color: rgba(255, 249, 240, 0.82);

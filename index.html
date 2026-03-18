@@ -12,6 +12,7 @@
         <div class="pill"><span data-i18n="level">Level</span>: <span id="level">1</span></div>
         <div class="pill"><span data-i18n="highScore">High Score</span>: <span id="high-score">0</span></div>
         <div class="pill"><span data-i18n="coins">Coins</span>: <span id="coins">0</span></div>
+        <div class="pill lives-pill hidden" id="lives-hud"><span data-i18n="livesHud">Lives</span>: <span id="lives-count">0</span></div>
         <button id="pause-btn" class="hud-btn" data-i18n="pause">Pause</button>
         <button id="settings-btn" class="hud-btn" data-i18n="settings">Settings</button>
       </div>
@@ -35,6 +36,16 @@
             <div class="menu-actions">
               <button id="daily-reward-btn" class="secondary" data-i18n="claimDaily">Claim daily</button>
               <button id="reward-ad-btn" class="secondary" data-i18n="watchRewardAd">Watch ad (+30)</button>
+            </div>
+          </div>
+          <div class="powerup-shop">
+            <h3 data-i18n="powerUpShop">Power Ups</h3>
+            <div class="powerup-item">
+              <span class="powerup-label"><span data-i18n="extraLife">Extra Life</span></span>
+              <span id="lives-display" class="lives-display">x0</span>
+              <button id="buy-life-btn" class="secondary powerup-buy-btn">
+                <span data-i18n="buy">Buy</span> — <span id="life-cost">50</span> 🪙
+              </button>
             </div>
           </div>
         </div>
