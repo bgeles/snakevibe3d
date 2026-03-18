@@ -1,5 +1,5 @@
 import * as THREE from "three";
-import { DIR, GRID_SIZE, LEVEL_UP_EVERY, MIN_SPEED_MS, OPPOSITE_DIR, SETTINGS_LIMITS, START_SPEED_MS } from "./config.js";
+import { DIR, FOOD_SCALING, GRID_SIZE, INVINCIBILITY_MS, LEVEL_UP_EVERY, MIN_SNAKE_LENGTH, MIN_SPEED_MS, OPPOSITE_DIR, SETTINGS_LIMITS, SHRINK_AMOUNT, SHRINK_BONUS, SOUNDTRACK_MAP, START_SPEED_MS } from "./config.js";
 import { LEVEL_PATTERNS } from "./levelPatterns.js";
 import { DEFAULT_THEME, THEMES } from "./themes.js";
 
@@ -19,7 +19,8 @@ export class SnakeGame {
     touchPad,
     settings,
     onProgress,
-    onGameOver
+    onGameOver,
+    onLifeUsed
   }) {
     this.canvas = canvas;
     this.scoreEl = scoreEl;
@@ -30,6 +31,7 @@ export class SnakeGame {
     this.touchPad = touchPad;
     this.onProgress = onProgress;
     this.onGameOver = onGameOver;
+    this.onLifeUsed = onLifeUsed;
 
     this.settings = {
       soundEnabled: Boolean(settings.soundEnabled),
@@ -70,9 +72,9 @@ export class SnakeGame {
 
     this.direction = DIR.RIGHT;
     this.nextDirection = DIR.RIGHT;
-    this.food = { x: 0, z: 0 };
-    this.foodMesh = null;
-    this.foodHalo = null;
+    this.foods = [];
+    this.foodMeshes = [];
+    this.foodHalos = [];
 
     this.score = 0;
     this.level = 1;
@@ -80,6 +82,15 @@ export class SnakeGame {
     this.loopStarted = false;
     this.cameraShake = 0;
     this.musicNodes = null;
+
+    // v4: soundtrack buffers
+    this.soundtrackBuffers = [];
+    this.currentTrackIndex = -1;
+
+    // v4: extra lives
+    this.extraLives = 0;
+    this.invincibleUntil = 0;
+    this.livesEl = null;
 
     this.setupWorld();
     this.setupEvents();
@@ -136,11 +147,13 @@ export class SnakeGame {
     return this.state;
   }
 
-  startRun() {
+  startRun(extraLives = 0) {
     this.score = 0;
     this.level = 1;
     this.speedMs = START_SPEED_MS;
     this.state = "playing";
+    this.extraLives = Math.max(0, Math.min(3, extraLives));
+    this.invincibleUntil = 0;
 
     this.direction = DIR.RIGHT;
     this.nextDirection = DIR.RIGHT;
@@ -161,8 +174,9 @@ export class SnakeGame {
     this.obstacleMeshes = [];
     this.particles = [];
 
+    this.clearAllFoods();
     this.setObstaclesForLevel(this.level);
-    this.spawnFood();
+    this.spawnFoods();
     this.renderSnake(true);
     this.updateHud();
     this.stopMusic();
@@ -253,13 +267,16 @@ export class SnakeGame {
 
     this.gridHelper.material.color.setHex(theme.rim);
 
-    if (this.foodMesh) {
-      this.foodMesh.material.color.setHex(theme.food);
-      this.foodMesh.material.emissive.setHex(theme.foodEmissive);
-    }
-    if (this.foodHalo) {
-      this.foodHalo.material.color.setHex(theme.halo);
-    }
+    this.foods.forEach((food, i) => {
+      const isGrowth = food.type === "growth";
+      if (this.foodMeshes[i]) {
+        this.foodMeshes[i].material.color.setHex(isGrowth ? theme.food : theme.shrinkFood);
+        this.foodMeshes[i].material.emissive.setHex(isGrowth ? theme.foodEmissive : theme.shrinkEmissive);
+      }
+      if (this.foodHalos[i]) {
+        this.foodHalos[i].material.color.setHex(isGrowth ? theme.halo : theme.shrinkHalo);
+      }
+    });
 
     this.recolorAmbientParticles();
     this.updateCamera(0);
@@ -340,39 +357,94 @@ export class SnakeGame {
     }
   }
 
-  spawnFood() {
-    while (true) {
-      const x = Math.floor(Math.random() * GRID_SIZE) + MIN;
-      const z = Math.floor(Math.random() * GRID_SIZE) + MIN;
+  clearAllFoods() {
+    this.foodMeshes.forEach((m) => this.scene.remove(m));
+    this.foodHalos.forEach((m) => this.scene.remove(m));
+    this.foods = [];
+    this.foodMeshes = [];
+    this.foodHalos = [];
+  }
+
+  getFoodScaling() {
+    const idx = Math.min(this.level - 1, FOOD_SCALING.length - 1);
+    return FOOD_SCALING[idx];
+  }
+
+  spawnFoods() {
+    this.clearAllFoods();
+    const scaling = this.getFoodScaling();
+    for (let i = 0; i < scaling.growth; i++) {
+      this.spawnSingleFood("growth");
+    }
+    for (let i = 0; i < scaling.shrink; i++) {
+      this.spawnSingleFood("shrink");
+    }
+  }
+
+  spawnSingleFood(type) {
+    let x, z;
+    for (let attempts = 0; attempts < 500; attempts++) {
+      x = Math.floor(Math.random() * GRID_SIZE) + MIN;
+      z = Math.floor(Math.random() * GRID_SIZE) + MIN;
       const blockedBySnake = this.snake.some((s) => s.x === x && s.z === z);
       const blockedByObstacle = this.obstacles.some((o) => o.x === x && o.z === z);
-      if (!blockedBySnake && !blockedByObstacle) {
-        this.food = { x, z };
-        break;
-      }
+      const blockedByFood = this.foods.some((f) => f.x === x && f.z === z);
+      if (!blockedBySnake && !blockedByObstacle && !blockedByFood) break;
     }
 
-    if (!this.foodMesh) {
-      const mat = new THREE.MeshStandardMaterial({
-        color: this.currentTheme.food,
-        emissive: this.currentTheme.foodEmissive,
-        emissiveIntensity: 1.25,
-        metalness: 0.2,
-        roughness: 0.3
-      });
-      this.foodMesh = new THREE.Mesh(new THREE.IcosahedronGeometry(0.44, 0), mat);
-      this.foodHalo = new THREE.Mesh(
-        new THREE.TorusGeometry(0.75, 0.08, 12, 24),
-        new THREE.MeshBasicMaterial({ color: this.currentTheme.halo, transparent: true, opacity: 0.56 })
-      );
-      this.foodHalo.rotation.x = Math.PI / 2;
-      this.scene.add(this.foodMesh, this.foodHalo);
+    const food = { x, z, type };
+    this.foods.push(food);
+
+    const isGrowth = type === "growth";
+    const color = isGrowth ? this.currentTheme.food : this.currentTheme.shrinkFood;
+    const emissive = isGrowth ? this.currentTheme.foodEmissive : this.currentTheme.shrinkEmissive;
+    const haloColor = isGrowth ? this.currentTheme.halo : this.currentTheme.shrinkHalo;
+
+    const mat = new THREE.MeshStandardMaterial({
+      color,
+      emissive,
+      emissiveIntensity: 1.25,
+      metalness: 0.2,
+      roughness: 0.3
+    });
+
+    const geo = isGrowth
+      ? new THREE.IcosahedronGeometry(0.44, 0)
+      : new THREE.OctahedronGeometry(0.32, 0);
+
+    const mesh = new THREE.Mesh(geo, mat);
+    const halo = new THREE.Mesh(
+      new THREE.TorusGeometry(isGrowth ? 0.75 : 0.55, 0.08, 12, 24),
+      new THREE.MeshBasicMaterial({ color: haloColor, transparent: true, opacity: 0.56 })
+    );
+    halo.rotation.x = Math.PI / 2;
+
+    const px = x * CELL;
+    const pz = z * CELL;
+    mesh.position.set(px, 0.6, pz);
+    halo.position.set(px, 0.16, pz);
+
+    if (!isGrowth) {
+      mesh.scale.setScalar(0.75);
     }
 
-    const px = this.food.x * CELL;
-    const pz = this.food.z * CELL;
-    this.foodMesh.position.set(px, 0.6, pz);
-    this.foodHalo.position.set(px, 0.16, pz);
+    this.scene.add(mesh, halo);
+    this.foodMeshes.push(mesh);
+    this.foodHalos.push(halo);
+  }
+
+  respawnSingleFood(index) {
+    const oldFood = this.foods[index];
+    const type = oldFood.type;
+
+    // Remove old meshes
+    this.scene.remove(this.foodMeshes[index]);
+    this.scene.remove(this.foodHalos[index]);
+    this.foods.splice(index, 1);
+    this.foodMeshes.splice(index, 1);
+    this.foodHalos.splice(index, 1);
+
+    this.spawnSingleFood(type);
   }
 
   setObstaclesForLevel(level) {
@@ -389,7 +461,7 @@ export class SnakeGame {
     transformed.forEach((pos, i) => {
       const blocked =
         this.snake.some((s) => s.x === pos.x && s.z === pos.z) ||
-        (this.food.x === pos.x && this.food.z === pos.z);
+        this.foods.some((f) => f.x === pos.x && f.z === pos.z);
       if (blocked) return;
 
       this.obstacles.push(pos);
@@ -649,6 +721,47 @@ export class SnakeGame {
     });
   }
 
+  playShrinkSound() {
+    const base = 320 - this.level * 8;
+    this.playTone(base, 90, "sawtooth", 0.07);
+    setTimeout(() => this.playTone(base * 0.8, 80, "sawtooth", 0.06), 70);
+  }
+
+  playLifeUseSound() {
+    [520, 440, 520, 660].forEach((freq, i) => {
+      setTimeout(() => this.playTone(freq, 120, "triangle", 0.1), i * 80);
+    });
+  }
+
+  getTrackIndexForLevel(level) {
+    for (let i = 0; i < SOUNDTRACK_MAP.length; i++) {
+      if (level <= SOUNDTRACK_MAP[i].maxLevel) return i;
+    }
+    return SOUNDTRACK_MAP.length - 1;
+  }
+
+  async loadSoundtracks() {
+    if (this.soundtrackBuffers.length > 0) return;
+    const Ctx = window.AudioContext || window.webkitAudioContext;
+    if (!Ctx) return;
+    if (!this.audioCtx) this.audioCtx = new Ctx();
+    const ctx = this.audioCtx;
+
+    const buffers = await Promise.all(
+      SOUNDTRACK_MAP.map(async (entry) => {
+        try {
+          const res = await fetch(entry.file);
+          if (!res.ok) return null;
+          const arrayBuf = await res.arrayBuffer();
+          return await ctx.decodeAudioData(arrayBuf);
+        } catch {
+          return null;
+        }
+      })
+    );
+    this.soundtrackBuffers = buffers;
+  }
+
   startMusic() {
     if (!this.settings.soundEnabled) return;
     const Ctx = window.AudioContext || window.webkitAudioContext;
@@ -656,44 +769,109 @@ export class SnakeGame {
     if (!this.audioCtx) this.audioCtx = new Ctx();
     const ctx = this.audioCtx;
     if (ctx.state === "suspended") ctx.resume();
-    const master = ctx.createGain();
-    master.gain.setValueAtTime(0, ctx.currentTime);
-    master.gain.linearRampToValueAtTime(0.04, ctx.currentTime + 2.5);
-    master.connect(ctx.destination);
-    const freqs = [55, 82.5, 110, 165];
-    const oscs = freqs.map((freq, i) => {
-      const osc = ctx.createOscillator();
-      const g = ctx.createGain();
-      osc.type = i % 2 === 0 ? "sine" : "triangle";
-      osc.frequency.value = freq;
-      osc.detune.value = i * 6 - 8;
-      g.gain.value = 1 / freqs.length;
-      osc.connect(g);
-      g.connect(master);
-      osc.start();
-      return osc;
-    });
-    const lfo = ctx.createOscillator();
-    const lfoGain = ctx.createGain();
-    lfo.frequency.value = 0.14;
-    lfoGain.gain.value = 0.015;
-    lfo.connect(lfoGain);
-    lfoGain.connect(master.gain);
-    lfo.start();
-    this.musicNodes = { master, oscs, lfo };
+
+    const trackIndex = this.getTrackIndexForLevel(this.level);
+    const buffer = this.soundtrackBuffers[trackIndex];
+
+    if (buffer) {
+      const source = ctx.createBufferSource();
+      const gain = ctx.createGain();
+      source.buffer = buffer;
+      source.loop = true;
+      gain.gain.setValueAtTime(0, ctx.currentTime);
+      gain.gain.linearRampToValueAtTime(0.18, ctx.currentTime + 1.5);
+      source.connect(gain);
+      gain.connect(ctx.destination);
+      source.start();
+      this.musicNodes = { source, gain, type: "buffer" };
+      this.currentTrackIndex = trackIndex;
+    } else {
+      // Fallback: oscillator-based music (original)
+      const master = ctx.createGain();
+      master.gain.setValueAtTime(0, ctx.currentTime);
+      master.gain.linearRampToValueAtTime(0.04, ctx.currentTime + 2.5);
+      master.connect(ctx.destination);
+      const freqs = [55, 82.5, 110, 165];
+      const oscs = freqs.map((freq, i) => {
+        const osc = ctx.createOscillator();
+        const g = ctx.createGain();
+        osc.type = i % 2 === 0 ? "sine" : "triangle";
+        osc.frequency.value = freq;
+        osc.detune.value = i * 6 - 8;
+        g.gain.value = 1 / freqs.length;
+        osc.connect(g);
+        g.connect(master);
+        osc.start();
+        return osc;
+      });
+      const lfo = ctx.createOscillator();
+      const lfoGain = ctx.createGain();
+      lfo.frequency.value = 0.14;
+      lfoGain.gain.value = 0.015;
+      lfo.connect(lfoGain);
+      lfoGain.connect(master.gain);
+      lfo.start();
+      this.musicNodes = { master, oscs, lfo, type: "oscillator" };
+      this.currentTrackIndex = trackIndex;
+    }
+  }
+
+  crossfadeTrack(newTrackIndex) {
+    if (newTrackIndex === this.currentTrackIndex) return;
+    if (!this.musicNodes || !this.audioCtx) return;
+
+    const buffer = this.soundtrackBuffers[newTrackIndex];
+    if (!buffer) return;
+
+    const ctx = this.audioCtx;
+    const fadeTime = 1.5;
+    const now = ctx.currentTime;
+
+    // Fade out current
+    if (this.musicNodes.type === "buffer") {
+      const old = this.musicNodes;
+      try { old.gain.gain.linearRampToValueAtTime(0, now + fadeTime); } catch {}
+      setTimeout(() => { try { old.source.stop(); } catch {} }, fadeTime * 1000 + 100);
+    } else {
+      this.stopMusic();
+    }
+
+    // Fade in new
+    const source = ctx.createBufferSource();
+    const gain = ctx.createGain();
+    source.buffer = buffer;
+    source.loop = true;
+    gain.gain.setValueAtTime(0, now);
+    gain.gain.linearRampToValueAtTime(0.18, now + fadeTime);
+    source.connect(gain);
+    gain.connect(ctx.destination);
+    source.start();
+
+    this.musicNodes = { source, gain, type: "buffer" };
+    this.currentTrackIndex = newTrackIndex;
   }
 
   stopMusic() {
     if (!this.musicNodes) return;
-    const { master, oscs, lfo } = this.musicNodes;
     const t = this.audioCtx ? this.audioCtx.currentTime + 0.5 : 0;
-    try { master.gain.linearRampToValueAtTime(0, t); } catch {}
-    setTimeout(() => {
-      oscs.forEach(o => { try { o.stop(); } catch {} });
-      try { lfo.stop(); } catch {}
-      try { master.disconnect(); } catch {}
-    }, 600);
+    if (this.musicNodes.type === "buffer") {
+      const { source, gain } = this.musicNodes;
+      try { gain.gain.linearRampToValueAtTime(0, t); } catch {}
+      setTimeout(() => {
+        try { source.stop(); } catch {}
+        try { gain.disconnect(); } catch {}
+      }, 600);
+    } else {
+      const { master, oscs, lfo } = this.musicNodes;
+      try { master.gain.linearRampToValueAtTime(0, t); } catch {}
+      setTimeout(() => {
+        oscs.forEach(o => { try { o.stop(); } catch {} });
+        try { lfo.stop(); } catch {}
+        try { master.disconnect(); } catch {}
+      }, 600);
+    }
     this.musicNodes = null;
+    this.currentTrackIndex = -1;
   }
 
   gameOver() {
@@ -721,6 +899,23 @@ export class SnakeGame {
     }
   }
 
+  useExtraLife(headPos) {
+    this.extraLives--;
+    this.invincibleUntil = performance.now() + INVINCIBILITY_MS;
+    this.playLifeUseSound();
+    this.cameraShake = 0.35;
+
+    // Remove last segments as penalty
+    const removeCount = Math.min(3, this.snake.length - MIN_SNAKE_LENGTH);
+    for (let i = 0; i < removeCount; i++) {
+      this.snake.pop();
+      this.segmentColors.pop();
+    }
+
+    this.createEatParticles(new THREE.Vector3(headPos.x * CELL, 0.5, headPos.z * CELL));
+    this.updateHud();
+  }
+
   updateLogic() {
     if (this.state !== "playing") return;
 
@@ -735,21 +930,55 @@ export class SnakeGame {
     const hitSelf = this.snake.some((s) => s.x === next.x && s.z === next.z);
     const hitObstacle = this.obstacles.some((o) => o.x === next.x && o.z === next.z);
 
-    if (hitWall || hitSelf || hitObstacle) {
+    const isInvincible = performance.now() < this.invincibleUntil;
+
+    if ((hitWall || hitSelf || hitObstacle) && !isInvincible) {
+      if (this.extraLives > 0) {
+        this.useExtraLife(head);
+        if (this.onLifeUsed) this.onLifeUsed(this.extraLives);
+        return;
+      }
       this.gameOver();
+      return;
+    }
+
+    // Skip movement if invincible and would hit
+    if ((hitWall || hitSelf || hitObstacle) && isInvincible) {
       return;
     }
 
     this.snake.unshift(next);
     this.segmentColors.unshift(this.pickSnakeColor());
 
-    const ateFood = next.x === this.food.x && next.z === this.food.z;
-    if (ateFood) {
-      this.score += 1;
-      this.playEatSound();
+    // Check collision with all foods
+    let ateIndex = -1;
+    for (let i = 0; i < this.foods.length; i++) {
+      if (next.x === this.foods[i].x && next.z === this.foods[i].z) {
+        ateIndex = i;
+        break;
+      }
+    }
+
+    if (ateIndex >= 0) {
+      const food = this.foods[ateIndex];
+      if (food.type === "growth") {
+        this.score += 1;
+        this.playEatSound();
+      } else {
+        // shrink
+        this.score += SHRINK_BONUS;
+        this.playShrinkSound();
+        // Remove segments from tail
+        const removeCount = Math.min(SHRINK_AMOUNT, this.snake.length - MIN_SNAKE_LENGTH);
+        for (let i = 0; i < removeCount; i++) {
+          this.snake.pop();
+          this.segmentColors.pop();
+        }
+      }
+
       this.cameraShake = 0.1;
       this.createEatParticles(new THREE.Vector3(next.x * CELL, 0.5, next.z * CELL));
-      this.spawnFood();
+      this.respawnSingleFood(ateIndex);
 
       const expectedLevel = Math.floor(this.score / LEVEL_UP_EVERY) + 1;
       if (expectedLevel > this.level) {
@@ -759,6 +988,15 @@ export class SnakeGame {
         this.playLevelUpSound();
         this.createLevelUpVfx(new THREE.Vector3(next.x * CELL, 0.5, next.z * CELL));
         this.cameraShake = 0.22;
+
+        // Re-spawn all foods with new scaling
+        this.spawnFoods();
+
+        // Check if soundtrack should change
+        const newTrackIdx = this.getTrackIndexForLevel(this.level);
+        if (newTrackIdx !== this.currentTrackIndex) {
+          this.crossfadeTrack(newTrackIdx);
+        }
       }
     } else {
       this.snake.pop();
@@ -804,13 +1042,25 @@ export class SnakeGame {
       if (p.mesh.position.z > MAX) p.mesh.position.z = MIN;
     });
 
-    if (this.foodMesh && this.foodHalo) {
-      this.foodMesh.rotation.y += delta * 3.2;
-      this.foodMesh.rotation.x += delta * 1.9;
-      this.foodMesh.position.y = 0.55 + Math.sin(nowMs * 0.005) * 0.13;
+    if (this.foodMeshes.length && this.foodHalos.length) {
+      this.foodMeshes.forEach((mesh, i) => {
+        const isGrowth = this.foods[i] && this.foods[i].type === "growth";
+        mesh.rotation.y += delta * (isGrowth ? 3.2 : -3.2);
+        mesh.rotation.x += delta * (isGrowth ? 1.9 : -1.9);
+        mesh.position.y = 0.55 + Math.sin(nowMs * 0.005 + i * 0.7) * 0.13;
+      });
+      this.foodHalos.forEach((halo, i) => {
+        halo.rotation.z += delta * 1.1;
+        halo.material.opacity = 0.45 + Math.sin(nowMs * 0.006 + i * 0.5) * 0.17;
+      });
+    }
 
-      this.foodHalo.rotation.z += delta * 1.1;
-      this.foodHalo.material.opacity = 0.45 + Math.sin(nowMs * 0.006) * 0.17;
+    // Invincibility blink effect
+    if (performance.now() < this.invincibleUntil && this.snakeMeshes.length) {
+      const blink = Math.sin(nowMs * 0.02) > 0;
+      this.snakeMeshes.forEach((m) => { if (m.visible) m.material.opacity = blink ? 1 : 0.3; m.material.transparent = true; });
+    } else if (this.snakeMeshes.length && this.snakeMeshes[0]?.material?.transparent) {
+      this.snakeMeshes.forEach((m) => { m.material.opacity = 1; m.material.transparent = false; });
     }
 
     if (this.snake.length) {
@@ -893,6 +1143,14 @@ export class SnakeGame {
     this.scoreEl.textContent = `${this.score}`;
     this.levelEl.textContent = `${this.level}`;
     this.highScoreEl.textContent = `${this.playerProfile.highScore}`;
+    if (this.livesEl) {
+      this.livesEl.textContent = `${this.extraLives}`;
+      const container = this.livesEl.closest(".lives-pill");
+      if (container) {
+        if (this.extraLives > 0) container.classList.remove("hidden");
+        else container.classList.add("hidden");
+      }
+    }
   }
 
   resize() {

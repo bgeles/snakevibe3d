@@ -17,6 +17,9 @@ const DEFAULT_PROFILE = {
     score20: false,
     level5: false,
     streak30: false
+  },
+  powerUps: {
+    extraLives: 0
   }
 };
 
@@ -35,6 +38,11 @@ export function loadProfile() {
       rewards: {
         ...DEFAULT_PROFILE.rewards,
         ...(parsed.rewards || {})
+      },
+      powerUps: {
+        ...DEFAULT_PROFILE.powerUps,
+        ...(parsed.powerUps || {}),
+        extraLives: Math.max(0, Math.min(3, Number((parsed.powerUps || {}).extraLives) || 0))
       },
       theme: sanitizeTheme(parsed.theme),
       language: sanitizeLanguage(parsed.language),
@@ -66,6 +74,11 @@ export function saveProfile(profile) {
     achievements: {
       ...DEFAULT_PROFILE.achievements,
       ...(profile.achievements || {})
+    },
+    powerUps: {
+      ...DEFAULT_PROFILE.powerUps,
+      ...(profile.powerUps || {}),
+      extraLives: Math.max(0, Math.min(3, Number((profile.powerUps || {}).extraLives) || 0))
     }
   };
   localStorage.setItem(STORAGE_KEY, JSON.stringify(safe));

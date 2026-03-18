@@ -18,7 +18,10 @@ export const THEMES = {
     obstacleA: 0x0088ff,
     obstacleB: 0x00ff44,
     ambientA: 0xff44aa,
-    ambientB: 0x00ffff
+    ambientB: 0x00ffff,
+    shrinkFood: 0xff0066,
+    shrinkEmissive: 0xcc0044,
+    shrinkHalo: 0xff4488
   },
   "ocean-glow": {
     name: "Ocean Glow",
@@ -39,7 +42,10 @@ export const THEMES = {
     obstacleA: 0xff00ff,
     obstacleB: 0xffaa00,
     ambientA: 0x00eeff,
-    ambientB: 0x55ffcc
+    ambientB: 0x55ffcc,
+    shrinkFood: 0xff3388,
+    shrinkEmissive: 0xdd1166,
+    shrinkHalo: 0xff66aa
   },
   "cyber-arena": {
     name: "Cyber Arena",
@@ -60,7 +66,10 @@ export const THEMES = {
     obstacleA: 0x00ffff,
     obstacleB: 0xffaa00,
     ambientA: 0xff00cc,
-    ambientB: 0x8855ff
+    ambientB: 0x8855ff,
+    shrinkFood: 0xff2200,
+    shrinkEmissive: 0xcc1100,
+    shrinkHalo: 0xff6644
   }
 };
 

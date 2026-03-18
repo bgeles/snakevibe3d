@@ -3,6 +3,7 @@ import { SnakeGame } from "./game/SnakeGame.js";
 import { loadProfile, saveProfile } from "./game/profileStore.js";
 import { detectLanguage, t } from "./game/i18n.js";
 import { MobileAdsService } from "./mobile/adService.js";
+import { POWER_UP_COSTS, MAX_EXTRA_LIVES } from "./game/config.js";
 
 const COIN_REWARD_PER_LEVEL = 5;
 const COIN_REWARD_DAILY = 20;
@@ -43,6 +44,11 @@ const saveProfileBtn = document.getElementById("save-profile");
 const closeSettingsBtn = document.getElementById("close-settings-btn");
 const dailyRewardBtn = document.getElementById("daily-reward-btn");
 const rewardAdBtn = document.getElementById("reward-ad-btn");
+const buyLifeBtn = document.getElementById("buy-life-btn");
+const livesDisplayEl = document.getElementById("lives-display");
+const lifeCostEl = document.getElementById("life-cost");
+const livesHudEl = document.getElementById("lives-hud");
+const livesCountEl = document.getElementById("lives-count");
 
 const soundToggle = document.getElementById("sound-toggle");
 const themeSelect = document.getElementById("theme-select");
@@ -60,6 +66,36 @@ if (!profile.language) {
 }
 let toastTimer = null;
 let lastAwardedLevel = 1;
+let pendingExtraLives = 0;
+
+function updatePowerUpShopUi() {
+  const currentLives = pendingExtraLives;
+  livesDisplayEl.textContent = `x${currentLives}`;
+  if (currentLives >= MAX_EXTRA_LIVES) {
+    buyLifeBtn.disabled = true;
+    lifeCostEl.textContent = "—";
+  } else {
+    const cost = POWER_UP_COSTS[currentLives];
+    lifeCostEl.textContent = `${cost}`;
+    buyLifeBtn.disabled = profile.coins < cost;
+  }
+}
+
+function buyExtraLife() {
+  if (pendingExtraLives >= MAX_EXTRA_LIVES) {
+    showToast(t(profile.language, "maxLives"));
+    return;
+  }
+  const cost = POWER_UP_COSTS[pendingExtraLives];
+  if (profile.coins < cost) {
+    showToast(t(profile.language, "notEnoughCoins"));
+    return;
+  }
+  const coins = profile.coins - cost;
+  pendingExtraLives++;
+  persistProfile({ coins });
+  updatePowerUpShopUi();
+}
 
 function applyTranslations() {
   document.documentElement.lang = profile.language;
@@ -98,6 +134,7 @@ function applyProfileToUi() {
   sensitivityValue.textContent = `${profile.sensitivity.toFixed(1)}x`;
   document.documentElement.setAttribute("data-theme", profile.theme);
   applyTranslations();
+  updatePowerUpShopUi();
 }
 
 function achievementLabel(achievement) {
@@ -243,6 +280,10 @@ const game = new SnakeGame({
     finalScoreEl.textContent = `${score}`;
     finalHighScoreEl.textContent = `${Math.max(highScore, profile.highScore)}`;
     showOverlay(gameoverMenuEl);
+  },
+  onLifeUsed: (remainingLives) => {
+    showToast(t(profile.language, "lifeUsed"));
+    livesCountEl.textContent = `${remainingLives}`;
   }
 });
 
@@ -279,7 +320,10 @@ function startRunFromUi() {
 
   lastAwardedLevel = 1;
   game.setPlayerProfile(profile);
-  game.startRun();
+  game.livesEl = livesCountEl;
+  game.startRun(pendingExtraLives);
+  pendingExtraLives = 0;
+  updatePowerUpShopUi();
   hideOverlays();
 }
 
@@ -295,6 +339,7 @@ playAgainBtn.addEventListener("click", startRunFromUi);
 
 dailyRewardBtn.addEventListener("click", claimDailyReward);
 rewardAdBtn.addEventListener("click", claimAdReward);
+buyLifeBtn.addEventListener("click", buyExtraLife);
 
 pauseBtn.addEventListener("click", () => {
   if (game.togglePause()) {
@@ -367,5 +412,7 @@ applyProfileToUi();
 renderAchievements();
 showOverlay(startMenuEl);
 game.setPlayerProfile(profile);
+game.livesEl = livesCountEl;
 game.boot();
+game.loadSoundtracks();
 initAds();
